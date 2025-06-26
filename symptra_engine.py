@@ -1,52 +1,39 @@
-import torch
-import faiss
-import pandas as pd
-from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
-from sentence_transformers import SentenceTransformer
+import streamlit as st
+from symptra_engine import symptra_chat
 
-# ✅ Load CSV data
-df = pd.read_csv("sample_symptra.csv")
-qa_texts = [f"question: {q}\nanswer: {a}" for q, a in zip(df["question"], df["answer"])]
+st.set_page_config(page_title="🩺 Symptra – AI Doctor", layout="wide")
 
-# ✅ Embedding setup
-embedder = SentenceTransformer("all-MiniLM-L6-v2")
-embeddings = embedder.encode(qa_texts, convert_to_tensor=False)
+st.title("🩺 Symptra – AI Clinical Assistant")
 
-dimension = embeddings[0].shape[0]
-index = faiss.IndexFlatL2(dimension)
-index.add(embeddings)
+with st.form("symptom_form"):
+    col1, col2 = st.columns(2)
 
-# ✅ Load small model (lightweight)
-model_name = "sshleifer/tiny-gpt2"
-tokenizer = AutoTokenizer.from_pretrained(model_name)
-model = AutoModelForCausalLM.from_pretrained(model_name)
+    with col1:
+        age = st.number_input("Age", min_value=0, max_value=120, step=1)
+        gender = st.selectbox("Gender", ["Male", "Female", "Other"])
+        symptoms = st.text_area("🩺 Symptoms", placeholder="e.g., Patient presents with chest pain, shortness of breath...")
 
-generator = pipeline("text-generation", model=model, tokenizer=tokenizer, max_new_tokens=150)
+    with col2:
+        history = st.text_area("📜 Medical History", placeholder="e.g., History of hypertension, diabetes, MI in 2020...")
+        medications = st.text_area("💊 Current Medications (one per line)", placeholder="e.g.,\nMetformin 500mg\nAspirin 81mg")
 
-# ✅ Core chat function
-def symptra_chat(query):
-    query_embed = embedder.encode([query])
-    D, I = index.search(query_embed, k=2)
-    context = "\n\n".join([qa_texts[i] for i in I[0]])
+    submitted = st.form_submit_button("🧠 Get AI Opinion")
 
-    prompt = f"""You are Symptra, an AI doctor trained on clinical guidelines.
+if submitted:
+    with st.spinner("Symptra is analyzing..."):
+        full_prompt = f"""A {age}-year-old {gender.lower()} presents with the following:
 
-📚 Context:
-{context}
+Symptoms:
+{symptoms}
 
-❓ Question: {query}
+Medical History:
+{history}
 
-✍️ Format your answer as:
-- Probable diagnosis
-- Recommended tests
-- Referral suggestions
-- Treatment plan
-- Red flag warning signs
-- Home/lifestyle care
-- ⚠️ Always end with: "Consult a qualified physician for confirmation."
+Current Medications:
+{medications}
 
-Symptra:"""
-
-    output = generator(prompt)[0]["generated_text"]
-    return output[len(prompt):].strip()
-
+What is your structured clinical assessment?
+"""
+        result = symptra_chat(full_prompt)
+        st.markdown("### 🩺 Symptra's Assessment")
+        st.write(result)
